@@ -1,0 +1,13 @@
+# Streamlit settings for the fraud detection dashboard (read from the project root).
+[theme]
+base = "light"
+primaryColor = "#2a78d6"
+
+[client]
+toolbarMode = "minimal"      # hide developer menu items such as "Deploy"
+
+[browser]
+gatherUsageStats = false     # keep everything local
+
+[server]
+address = "127.0.0.1"

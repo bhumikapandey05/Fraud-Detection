@@ -1,0 +1,89 @@
+# ---------------------------------------------------------------------------
+# Python / tooling
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+tmp/
+*.tmp
+*.part
+
+# ---------------------------------------------------------------------------
+# Virtual environments (main + isolated Evidently env)
+# ---------------------------------------------------------------------------
+.venv/
+.venv-*/
+venv/
+env/
+
+# ---------------------------------------------------------------------------
+# Secrets and credentials - never commit
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+id_rsa*
+kaggle.json
+.kaggle/
+.aws/
+credentials*
+secrets*
+*.secret
+*.token
+.streamlit/secrets.toml
+
+# ---------------------------------------------------------------------------
+# IDE / OS
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/
+*.iml
+.DS_Store
+.claude/
+
+# ---------------------------------------------------------------------------
+# Data: raw transactions, splits and any derived tables (download instead)
+# ---------------------------------------------------------------------------
+data/*/*
+!data/*/.gitkeep
+*.csv
+*.parquet
+*.zip
+
+# ---------------------------------------------------------------------------
+# Generated models, registries, reports, monitoring and logs
+# (top-level folders are anchored with '/' so same-named source packages are kept)
+# ---------------------------------------------------------------------------
+artifacts/*
+!artifacts/.gitkeep
+*.joblib
+*.pkl
+*.pickle
+/mlflow/
+/mlruns/
+/mlartifacts/
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+/monitoring/
+reports/*
+!reports/.gitkeep
+logs/*
+!logs/.gitkeep
+*.log

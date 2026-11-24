@@ -1,0 +1,16 @@
+# Runtime dependencies (Phase 1 data prep, 2 modelling, 3 MLflow tracking, 4 serving + SHAP).
+# Pinned to the exact versions this project was tested with.
+numpy==2.4.6
+pandas==3.1.1
+scikit-learn==1.9.1
+matplotlib==3.11.2
+pyyaml==6.0.4
+pyarrow==26.0.1
+xgboost==3.2.0          # macOS also needs the OpenMP runtime: brew install libomp
+mlflow==3.18.0
+fastapi==0.165.0
+uvicorn==0.54.0
+streamlit==1.67.0
+httpx==0.28.1
+shap==0.51.0
+# Evidently is installed separately in .venv-monitoring: see requirements-monitoring.txt

@@ -1,0 +1,148 @@
+# Central configuration for the fraud detection project.
+# All paths are relative to the project root.
+
+paths:
+  raw_data: data/raw/creditcard.csv
+  interim_dir: data/interim          # cleaned (deduplicated) dataset
+  processed_dir: data/processed      # train / validation / test splits
+  artifacts_dir: artifacts           # fitted preprocessor + reports
+  eda_dir: reports/eda               # EDA summary + figures
+  model_dir: artifacts/model         # trained inference pipeline + metadata (Phase 2)
+  training_report_dir: reports/training  # comparison tables, curves, evaluation report
+  frozen_dir: artifacts/frozen       # read-only snapshots of released models (Phase 3)
+  monitoring_dir: monitoring         # monitoring store, drift reports, governance log (Phase 5)
+  log_dir: logs
+
+dataset:
+  kaggle_slug: mlg-ulb/creditcardfraud
+  file_name: creditcard.csv
+  target: Class
+  time_column: Time
+  amount_column: Amount
+  expected_rows: 284807              # size of the published dataset (sanity check only)
+
+cleaning:
+  drop_duplicates: true              # exact duplicate rows are removed BEFORE splitting
+
+split:
+  strategy: time                     # "time" (recommended) or "stratified" (random baseline)
+  train_size: 0.70
+  validation_size: 0.15
+  test_size: 0.15
+  min_positives_per_split: 30        # fail loudly if a split has too few fraud cases
+  random_state: 42                   # used only by the "stratified" strategy
+
+preprocessing:
+  amount_transform: log1p            # "log1p" or "none"
+  scaler: robust                     # "robust" or "standard"; RobustScaler resists outliers
+  add_hour_features: true            # derive cyclical hour-of-day features from Time
+  drop_raw_time: true                # raw Time is a monotonic counter -> not a usable feature
+
+training:
+  random_state: 42                   # one seed drives every model -> reproducible runs
+  models: [logistic_regression, random_forest, xgboost]
+  selection_metric: pr_auc           # validation metric used to pick the best model
+  bootstrap_samples: 1000            # resamples for 95% confidence intervals (0 = off)
+  # Class imbalance is handled with class weights computed from TRAINING labels only.
+  # Validation and test data are never resampled or reweighted.
+  params:
+    logistic_regression:
+      C: 1.0
+      max_iter: 2000
+      class_weight: balanced
+    random_forest:
+      n_estimators: 300
+      min_samples_leaf: 2
+      max_features: sqrt
+      class_weight: balanced_subsample
+      n_jobs: -1
+    xgboost:
+      n_estimators: 400
+      learning_rate: 0.05
+      max_depth: 4
+      subsample: 0.8
+      colsample_bytree: 0.8
+      min_child_weight: 1
+      scale_pos_weight: auto         # auto = negatives / positives in the training split
+      tree_method: hist
+      n_jobs: -1
+
+threshold:
+  # How the fraud/no-fraud cut-off is chosen on VALIDATION data.
+  #   cost   -> minimise  cost_false_negative * FN + cost_false_positive * FP
+  #   f_beta -> maximise F-beta (beta > 1 favours recall)
+  method: cost
+  # Illustrative business costs (assumptions, in dollars):
+  cost_false_positive: 5.0           # analyst review + customer friction for a false alarm
+  cost_false_negative: 120.0         # ~ average fraud amount lost when fraud is missed
+  beta: 2.0                          # used only when method = f_beta
+
+mlflow:
+  # Local, file-based MLflow: a SQLite database + an artifact folder. No server needed.
+  tracking_db: mlflow/mlflow.db
+  artifact_dir: mlflow/artifacts
+  experiment_name: credit-card-fraud-detection
+  registered_model_name: fraud-detector
+  champion_alias: champion           # alias pointing at the model version in use
+  log_training_runs: true            # `fraud-detection train` logs every run to MLflow
+
+serving:
+  # Where the API loads the approved model from:
+  #   registry -> MLflow alias (e.g. fraud-detector@champion), verified against the frozen snapshot
+  #   frozen   -> the frozen snapshot folder directly (no MLflow needed)
+  model_source: registry
+  # Which release the API may serve:
+  #   auto          -> whatever version holds the champion alias, provided it is an APPROVED
+  #                    release whose frozen snapshot verifies (follows promotions/rollbacks)
+  #   <snapshot>    -> pin to one release, e.g. phase2-rf-v1
+  frozen_snapshot: auto
+  api_host: 127.0.0.1
+  api_port: 8000
+  max_batch_size: 1000               # transactions per /predict/batch request
+  dashboard_api_url: http://127.0.0.1:8000
+
+explainability:
+  # Local SHAP explanations for single transactions (TreeSHAP, interventional).
+  # The baseline is the model's average fraud score over this background sample of
+  # real TRAINING transactions (natural fraud rate). Never uses validation/test data.
+  background_size: 500               # more rows = steadier baseline, slower (~0.35 ms/row each)
+  random_state: 42                   # fixed seed -> identical explanations on every start
+  top_k: 5                           # features listed toward / away from fraud by default
+  additivity_tolerance: 1.0e-6       # |baseline + sum(contributions) - score| must stay below
+
+monitoring:
+  capture_predictions: true          # API stores scored transactions for monitoring (local SQLite)
+  evidently_python: .venv-monitoring/bin/python   # isolated env (Evidently needs pandas < 3)
+  experiment_name: credit-card-fraud-monitoring
+  governance_experiment_name: credit-card-fraud-governance
+  reference_size: 20000              # training rows used as the drift reference (seeded)
+  random_state: 42
+  min_rows: 200                      # fewer rows -> drift statistics are not meaningful
+  min_fraud_labels: 20               # fewer labelled frauds -> performance is not evaluated
+  alerts:
+    drift_share_warning: 0.20        # share of monitored features with detected drift
+    drift_share_critical: 0.40
+    # Drift in any of these raises a warning even when few features drift overall:
+    # Amount, the hour of day, and the components with the strongest fraud signal in EDA.
+    watched_features: [Amount, hour_of_day, V14, V17, V12, V10]
+    alert_rate_ratio_max: 3.0        # flagged share vs the frozen evaluation's flagged share
+    missing_share_max: 0.0
+    out_of_range_share_max: 0.01     # values outside the training range
+    duplicate_share_max: 0.01
+    min_recall: 0.65                 # ~ lower end of the champion's test recall 95% CI (0.63-0.86)
+    min_precision: 0.25
+    min_pr_auc: 0.60
+
+retraining:
+  use_production_labels: true        # add labelled production transactions to the training data
+  holdout_fraction: 0.30             # newest labelled production rows kept OUT of training, for comparison
+  random_state: 42
+  criteria:                          # a candidate must pass ALL of these to be eligible
+    max_validation_pr_auc_drop: 0.01     # candidate PR-AUC >= champion - 0.01 on validation
+    max_validation_recall_drop: 0.05     # at each model's own tuned threshold
+    max_validation_cost_increase: 0.10   # relative expected cost on validation
+    min_holdout_pr_auc_gain: 0.0         # candidate >= champion on recent labelled holdout
+    require_holdout: true                # no holdout with enough frauds -> not eligible
+
+logging:
+  level: INFO

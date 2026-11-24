@@ -1,0 +1,75 @@
+# Local, reproducible stack. Usage:
+#   docker compose up --build            # first run bootstraps data + champion, then serves
+#   docker compose run --rm bootstrap    # re-run the (idempotent) bootstrap on its own
+# State lives in named volumes, so it survives `docker compose down` (use `down -v` to reset).
+# Ports bind to 127.0.0.1 only; override with API_PORT, DASHBOARD_PORT, MONITORING_PORT, MLFLOW_PORT.
+
+x-app: &app
+  build: .
+  image: fraud-detection-mlops:latest
+  volumes:
+    - data:/app/data
+    - artifacts:/app/artifacts
+    - mlflow:/app/mlflow
+    - monitoring:/app/monitoring
+    - reports:/app/reports
+    - logs:/app/logs
+
+services:
+  bootstrap:
+    <<: *app
+    # Download public data -> prepare -> train -> freeze -> register champion (idempotent).
+    command: ["fraud-detection", "bootstrap", "--source", "mirror"]
+    restart: "no"
+
+  api:
+    <<: *app
+    command: ["fraud-detection", "serve", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:${API_PORT:-8000}:8000"]
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  dashboard:
+    <<: *app
+    command: ["fraud-detection", "dashboard", "--address", "0.0.0.0", "--port", "8501",
+              "--api-url", "http://api:8000"]
+    ports: ["127.0.0.1:${DASHBOARD_PORT:-8501}:8501"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  monitoring-dashboard:
+    <<: *app
+    command: ["fraud-detection", "monitoring-dashboard", "--address", "0.0.0.0", "--port", "8502"]
+    ports: ["127.0.0.1:${MONITORING_PORT:-8502}:8502"]
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  mlflow:
+    <<: *app
+    command: ["mlflow", "ui", "--backend-store-uri", "sqlite:////app/mlflow/mlflow.db",
+              "--host", "0.0.0.0", "--port", "5000"]
+    ports: ["127.0.0.1:${MLFLOW_PORT:-5000}:5000"]
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  data:
+  artifacts:
+  mlflow:
+  monitoring:
+  reports:
+  logs:

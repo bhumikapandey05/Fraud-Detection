@@ -1,0 +1,7 @@
+# Isolated environment for Evidently drift reports (Phase 5).
+# Evidently 0.7.x does not support pandas 3, which the model/API environment uses,
+# so it runs in its own virtual environment: .venv-monitoring (see `make monitoring-env`).
+# The main environment never imports Evidently.
+evidently==0.7.23
+pandas>=2.2,<3
+pyarrow>=15
